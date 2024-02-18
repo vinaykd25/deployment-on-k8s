@@ -1,0 +1,27 @@
+apiVersion: machinelearning.seldon.io/v1
+kind: SeldonDeployment
+metadata:
+  name: model-deployment
+spec:
+  name: sample-model-deployment
+  predictors:
+  - componentSpecs:
+    - spec:
+        containers:
+        - image: docker.io/model:{{TAG_PLACEHOLDER}}
+          name: model
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+    graph:
+      children: []
+      endpoint:
+        type: REST
+      name: classifier
+      type: MODEL
+    name: example
+    replicas: 1

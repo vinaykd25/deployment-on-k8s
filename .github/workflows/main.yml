@@ -1,0 +1,64 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+jobs:
+  build-and-deploy:
+    name: Build and Deploy Docker Image in Public/Private Repository
+    container:
+      image: gcr.io/kaniko-project/executor:latest
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Set date and time
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d-%H-%M-%S')"
+        
+      - name: Build and Push Model Image
+        run: |
+          echo 'Building Container for dev with caching'
+          echo "{\"auths\":{\"docker.io\":{\"username\":\"${{ secrets.USERNAME }}\",\"password\":\"${{ secrets.PASSWORD }}\"}}}" > /kaniko/.docker/config.json
+          /kaniko/executor --context 'git://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/vinaykd25/deployment-on-k8s.git#refs/heads/dev' --dockerfile 'Dockerfile' --destination docker.io/model:${{ steps.date.outputs.date }} --force
+
+      # - name: Run anchor Scan
+      #   uses: anchore/scan@v2
+      #   continue-on-error: true
+      #   with: 
+      #     image: 'docker.io/model:${{ steps.date.outputs.date }}'
+      #     format: 'table'
+      #     exit-code: '1'
+      #     ignore-unfixed: true
+      #     vuln-type: 'os,library'
+      #     severity: 'MEDIUM,HIGH,CRITICAL'
+
+      - name: Replace image tag in dev deployment
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          if: github.ref == 'refs/heads/dev'
+          run: |
+            ls -l
+            sed -i "s/{{TAG_PLACEHOLDER}}/${{ steps.date.outputs.date }}/g" dev-deployment.yaml
+
+      # Install kubectl
+      - name: Install Kubectl
+        run: |
+          apk add --update ca-certificates
+          apk add --update -t deps curl
+          apk add --update gettext
+          apk add --update git
+          cd /usr/local/bin
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+          apk del --purge deps
+          rm /var/cache/apk/*
+
+      # Configure kubectl with your cluster credentials
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig.yaml
+          kubectl --kubeconfig=kubeconfig.yaml version
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl --kubeconfig=kubeconfig.yaml apply -f dev-deployment.yaml -n github-actions

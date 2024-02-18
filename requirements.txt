@@ -1,0 +1,6 @@
+seldon-core==1.13.1
+markupsafe
+numpy
+pandas
+tesnorflow
+keras
